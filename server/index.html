@@ -455,19 +455,19 @@
         detectionResolution: '1536',
         textDetector: 'default',
         renderTextDirection: 'auto',
-        translator: 'custom_openai',
-        validTranslators: ['youdao', 'baidu', 'deepl', 'papago', 'caiyun', 'sakura', 'offline', 'openai', 'deepseek', 'none', 'custom_openai'],
+        translator: 'youdao',
+        validTranslators: ['youdao', 'baidu', 'deepl', 'papago', 'caiyun', 'sakura', 'offline', 'openai', 'deepseek', 'none'],
         getTranslatorName(key) {
             if (key === 'none')
                 return "No Text"
             return key ? key[0].toUpperCase() + key.slice(1) : ""
         },
-        targetLanguage: 'ENG',
+        targetLanguage: 'CHS',
 
         inpaintingSize: '2048',
-        customUnclipRatio: 2.8,
-        customBoxThreshold: 0.5,
-        maskDilationOffset: 35,
+        customUnclipRatio: 2.3,
+        customBoxThreshold: 0.7,
+        maskDilationOffset: 30,
         inpainter: 'default',
 
         fontSize: null,
