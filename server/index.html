@@ -198,6 +198,28 @@
         >
             <div class="flex flex-col w-85ch h-full justify-center gap-4">
                 <div class="flex flex-col gap-4">
+                    <!-- font size input field -->
+                    <div class="select-container">
+                        <i class="iconify" data-icon="carbon:text-font"></i>
+                        <input type="number"
+                               class="input-field"
+                               v-model="fontSize"
+                               placeholder="Font size (default: automatic)"
+                               min="1"
+                               step="1"/>
+                    </div>
+
+                    <!-- mininum font size input field -->
+                    <div class="select-container">
+                        <i class="iconify" data-icon="carbon:text-small-caps"></i>
+                        <input type="number"
+                               class="input-field"
+                               v-model="fontSizeMinimum"
+                               placeholder="Minimum font size (default: -1)"
+                               min="-1"
+                               step="1"/>
+                    </div>
+
                     <div class="select-container">
                         <i class="iconify" data-icon="carbon:fit-to-screen"></i>
                         <select v-model="detectionResolution">
@@ -232,10 +254,10 @@
                     <div class="select-container">
                         <i class="iconify" data-icon="carbon:language"></i>
                         <select v-model="targetLanguage">
+							<option value="ENG">English</option>
                             <option value="CHS">简体中文</option>
                             <option value="CHT">繁體中文</option>
                             <option value="JPN">日本語</option>
-                            <option value="ENG">English</option>
                             <option value="KOR">한국어</option>
                             <option value="VIN">Tiếng Việt</option>
                             <option value="CSY">čeština</option>
@@ -267,9 +289,9 @@
                         <input type="number"
                                class="input-field"
                                v-model="customUnclipRatio"
-                               placeholder="2.3 (Default)"
+                               placeholder="2.4 (Default)"
                                step="0.01"
-                               value="2.3"/>
+                               value="2.4"/>
                     </div>
                     <div class="select-container">
                         <i class="iconify" data-icon="weui:photo-wall-outlined"></i>
@@ -433,20 +455,23 @@
         detectionResolution: '1536',
         textDetector: 'default',
         renderTextDirection: 'auto',
-        translator: 'youdao',
-        validTranslators: ['youdao', 'baidu', 'deepl', 'papago', 'caiyun', 'sakura', 'offline', 'openai', 'deepseek', 'none'],
+        translator: 'custom_openai',
+        validTranslators: ['youdao', 'baidu', 'deepl', 'papago', 'caiyun', 'sakura', 'offline', 'openai', 'deepseek', 'none', 'custom_openai'],
         getTranslatorName(key) {
             if (key === 'none')
                 return "No Text"
             return key ? key[0].toUpperCase() + key.slice(1) : ""
         },
-        targetLanguage: 'CHS',
+        targetLanguage: 'ENG',
 
         inpaintingSize: '2048',
-        customUnclipRatio: 2.3,
-        customBoxThreshold: 0.7,
-        maskDilationOffset: 30,
+        customUnclipRatio: 2.8,
+        customBoxThreshold: 0.5,
+        maskDilationOffset: 35,
         inpainter: 'default',
+
+        fontSize: null,
+        fontSizeMinimum: -1,
 
 		// Lightbox State
 		lightboxVisible: false,
@@ -488,9 +513,12 @@
                 const file = files[0];
                 if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
                     console.log(`Hochgeladene Datei ist eine ZIP-Datei: "${file.name}". Starte Extraktion...`);
+                    // Speichere den Namen der ZIP-Datei
                     this.uploadedZipName = file.name.replace(/\.zip$/, '');
+                    // ZIP-Datei entpacken und Bilder extrahieren
                     this.files = await extractImagesFromZip(file);
                 } else {
+                    // Normale Bilddateien verarbeiten
                     this.files = Array.from(files);
                     this.uploadedZipName = null;
                 }
@@ -595,7 +623,9 @@
                     "unclip_ratio": ${this.customUnclipRatio}
                 },
                 "render": {
-                    "direction": "${this.renderTextDirection}"
+                    "direction": "${this.renderTextDirection}",
+                    "font_size": ${this.fontSize || 'null'},
+                    "font_size_minimum": ${this.fontSizeMinimum}
                 },
                 "translator": {
                     "translator": "${this.translator}",
