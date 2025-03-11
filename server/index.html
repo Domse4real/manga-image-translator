@@ -179,6 +179,18 @@
 		.nav-btn:hover {
 			color: #3182ce;
 		}
+		.progress-bar {
+			width: 100%;
+			background-color: #e0e0e0;
+			border-radius: 10px;
+			overflow: hidden;
+		}
+		
+		.progress-bar-fill {
+			height: 10px;
+			background-color: #3182ce;
+			transition: width 0.3s ease;
+		}
     </style>
 </head>
 <body>
@@ -324,20 +336,32 @@
                     </div>
                 </div>
 
+                <div v-if="zipProgress.visible" class="flex flex-col items-center gap-2">
+                    <div class="status-message">{{ zipProgress.message }}</div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div class="bg-blue-600 h-2.5 rounded-full" :style="{ width: zipProgress.percentage + '%' }"></div>
+                    </div>
+                </div>
+				<div v-if="downloadProgress.visible" class="flex flex-col items-center gap-2">
+					<div class="status-message">{{ downloadProgress.message }}</div>
+					<div class="w-full bg-gray-200 rounded-full h-2.5">
+						<div class="bg-blue-600 h-2.5 rounded-full" :style="{ width: downloadProgress.percentage + '%' }"></div>
+					</div>
+				</div>
                 <div v-if="fileStatus.length > 0" class="flex flex-col items-center gap-4">
                     <div v-if="fileStatus.every(status => status.status === 'finished')" class="flex flex-col items-center gap-2">
                         <button type="button" class="button" @click="downloadAll">Download All Images as ZIP</button>
                     </div>
                     <button class="button" @click="clear">Upload Another</button>
-                    <div v-for="(status, index) in fileStatus" :key="index" class="flex flex-col items-center gap-2">
-						<div v-if="status.status === 'finished'" class="flex flex-col items-center">
+					<div v-for="(status, index) in fileStatus" :key="index" class="flex flex-col items-center gap-2">
+						<div v-if="status.status === 'finished' && status.result instanceof Blob" class="flex flex-col items-center">
 							<img :src="URL.createObjectURL(status.result)" class="image-preview" @click="openLightbox(index)"/>
 						</div>
-                        <div v-else class="flex flex-col items-center gap-2">
-                            <i class="iconify w-8 h-8 text-gray-500 animate-spin" data-icon="carbon:progress-bar-round"></i>
-                            <div>{{ status.status }}</div>
-                        </div>
-                    </div>
+						<div v-else class="flex flex-col items-center gap-2">
+							<i class="iconify w-8 h-8 text-gray-500 animate-spin" data-icon="carbon:progress-bar-round"></i>
+							<div>{{ status.status }}</div>
+						</div>
+					</div>
                 </div>
                 <div v-else-if="status" class="file-upload">
                     <div v-if="error" class="flex flex-col items-center gap-2">
@@ -401,12 +425,13 @@
         return `${formatSize(loaded)}/${formatSize(total)}`
     }
 
-	async function extractImagesFromZip(zipFile) {
+	async function extractImagesFromZip(zipFile, updateProgress) {
 		const zip = new JSZip();
 		const loadedZip = await zip.loadAsync(zipFile);
 		const images = [];
 	
-		console.log(`ZIP-Datei "${zipFile.name}" erfolgreich geladen. Enthält ${Object.keys(loadedZip.files).length} Dateien.`);
+		const totalFiles = Object.keys(loadedZip.files).length;
+		let processedFiles = 0;
 	
 		for (const [filename, file] of Object.entries(loadedZip.files)) {
 			if (!file.dir) {
@@ -433,11 +458,15 @@
 					const blob = await file.async('blob');
 					images.push(new File([blob], filename, { type: mimeType }));
 				}
+	
+				processedFiles++;
+				if (updateProgress) {
+					updateProgress(processedFiles, totalFiles);
+				}
 			}
 		}
 	
-		console.log(`Extrahierte ${images.length} Bilder aus der ZIP-Datei.`);
-	
+		console.log(`Extract ${images.length} images from ZIP.`);
 		return images;
 	}
 
@@ -456,7 +485,7 @@
         textDetector: 'default',
         renderTextDirection: 'auto',
         translator: 'youdao',
-        validTranslators: ['youdao', 'baidu', 'deepl', 'papago', 'caiyun', 'sakura', 'offline', 'openai', 'deepseek', 'none'],
+        validTranslators: ['youdao', 'baidu', 'deepl', 'papago', 'caiyun', 'sakura', 'offline', 'openai', 'deepseek', 'none', 'custom_openai'],
         getTranslatorName(key) {
             if (key === 'none')
                 return "No Text"
@@ -472,6 +501,21 @@
 
         fontSize: null,
         fontSizeMinimum: -1,
+
+        // ZIP import progress
+        zipProgress: {
+            visible: false,
+            message: '',
+            percentage: 0,
+            totalFiles: 0,
+            processedFiles: 0,
+        },
+
+		downloadProgress: {
+			visible: false,
+			message: '',
+			percentage: 0,
+		},
 
 		// Lightbox State
 		lightboxVisible: false,
@@ -512,13 +556,27 @@
             if (files && files.length > 0) {
                 const file = files[0];
                 if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
-                    console.log(`Hochgeladene Datei ist eine ZIP-Datei: "${file.name}". Starte Extraktion...`);
-                    // Speichere den Namen der ZIP-Datei
+                    console.log(`Uploaded file is .zip archive: "${file.name}". Start extraction...`);
                     this.uploadedZipName = file.name.replace(/\.zip$/, '');
-                    // ZIP-Datei entpacken und Bilder extrahieren
-                    this.files = await extractImagesFromZip(file);
+
+                    // Enable progress bar
+                    this.zipProgress.visible = true;
+                    this.zipProgress.totalFiles = 0;
+                    this.zipProgress.processedFiles = 0;
+                    this.zipProgress.percentage = 0;
+                    this.zipProgress.message = 'Preparing to extract files...';
+
+                    // extract images
+                    this.files = await extractImagesFromZip(file, (processedFiles, totalFiles) => {
+                        this.zipProgress.totalFiles = totalFiles;
+                        this.zipProgress.processedFiles = processedFiles;
+                        this.zipProgress.percentage = (processedFiles / totalFiles) * 100;
+                        this.zipProgress.message = `Extracting images (${processedFiles}/${totalFiles})`;
+                    });
+
+                    // Hide progress bar
+                    this.zipProgress.visible = false;
                 } else {
-                    // Normale Bilddateien verarbeiten
                     this.files = Array.from(files);
                     this.uploadedZipName = null;
                 }
@@ -595,15 +653,13 @@
         get error() {
             return /^error/.test(this.status);
         },
-        async onsubmit(e) {
-            if (this.files.length === 0) return;
-
-            this.fileStatus = this.files.map(() => ({ status: 'pending', result: null }));
-
-            for (let i = 0; i < this.files.length; i++) {
-                await this.processFile(this.files[i], i);
-            }
-        },
+		async onsubmit(e) {
+			if (this.files.length === 0) return;
+		
+			this.fileStatus = this.files.map(() => ({ status: 'pending', result: null }));
+		
+			await Promise.all(this.files.map((file, index) => this.processFile(file, index)));
+		},
         async processFile(file, index) {
             this.fileStatus[index] = { status: 'uploading', result: null };
 
@@ -711,30 +767,49 @@
 
             await uploadWithProgress(formData);
         },
-        async downloadAll() {
-            const zip = new JSZip();
-
-            // Add images to zip 
-            this.fileStatus.forEach((status, index) => {
-                if (status.status === 'finished' && status.result) {
-                    zip.file(`image_${index + 1}.png`, status.result);
-                }
-            });
-
-            // Generate zip and trigger download
-            const content = await zip.generateAsync({ type: "blob" });
-			console.log("test", content);
-            const url = URL.createObjectURL(content);
-            const a = document.createElement("a");
-            a.href = url;
-            // Use name of uploaded zip
-            const zipName = this.uploadedZipName ? `translated-${this.uploadedZipName}.zip` : "translated_images.zip";
-            a.download = zipName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        },
+		async downloadAll() {
+			const zip = new JSZip();
+	
+			this.downloadProgress.visible = true;
+			this.downloadProgress.message = 'Preparing ZIP file...';
+			this.downloadProgress.percentage = 0;
+	
+			const totalFiles = this.fileStatus.filter(status => status.status === 'finished' && status.result).length;
+			let processedFiles = 0;
+	
+			this.fileStatus.forEach((status, index) => {
+				if (status.status === 'finished' && status.result) {
+					zip.file(`image_${index + 1}.png`, status.result);
+					processedFiles++;
+					this.downloadProgress.percentage = (processedFiles / totalFiles) * 100;
+					this.downloadProgress.message = `Adding images to ZIP (${processedFiles}/${totalFiles})`;
+				}
+			});
+	
+			// Generate zip and show progress
+			this.downloadProgress.message = 'Generating ZIP file...';
+			const content = await zip.generateAsync(
+				{ type: "blob" },
+				(metadata) => {
+					this.downloadProgress.percentage = metadata.percent;
+					this.downloadProgress.message = `Generating ZIP file (${Math.round(metadata.percent)}%)`;
+				}
+			);
+	
+			// Trigger the download
+			const url = URL.createObjectURL(content);
+			const a = document.createElement("a");
+			a.href = url;
+			const zipName = this.uploadedZipName ? `translated-${this.uploadedZipName}.zip` : "translated_images.zip";
+			a.download = zipName;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+	
+			// Hide progress bar
+			this.downloadProgress.visible = false;
+		},
         clear() {
             this.files = [];
             this.fileStatus = [];
